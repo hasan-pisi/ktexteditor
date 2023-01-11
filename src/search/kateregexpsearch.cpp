@@ -163,6 +163,155 @@ struct IndexPair {
     int closeIndex;
 };
 
+QVector<KTextEditor::Range> KateRegExpSearch::multilineSearch(const QRegularExpression &repairedRegex,
+                                                              const QString &wholeRange,
+                                                              bool backwards,
+                                                              int rangeStartLine,
+                                                              int rangeStartCol,
+                                                              int maxMatchOffset,
+                                                              const QVector<int> &lineLens)
+{
+    QRegularExpressionMatch match;
+    bool found = false;
+    QRegularExpressionMatchIterator iter = repairedRegex.globalMatch(wholeRange, rangeStartCol);
+
+    if (backwards) {
+        while (iter.hasNext()) {
+            QRegularExpressionMatch curMatch = iter.next();
+            if (curMatch.capturedEnd() <= maxMatchOffset) {
+                match.swap(curMatch);
+                found = true;
+            }
+        }
+    } else { /* forwards */
+        QRegularExpressionMatch curMatch;
+        if (iter.hasNext()) {
+            curMatch = iter.next();
+        }
+        if (curMatch.capturedEnd() <= maxMatchOffset) {
+            match.swap(curMatch);
+            found = true;
+        }
+    }
+
+    if (!found) {
+        // no match
+        FAST_DEBUG("not found");
+        return {};
+    }
+
+    // Capture groups: save opening and closing indices and build a map,
+    // the correct values will be written into it later
+    QMap<int, TwoViewCursor *> indicesToCursors;
+    const int numCaptures = repairedRegex.captureCount();
+    QVector<IndexPair> indexPairs(numCaptures + 1);
+    for (int c = 0; c <= numCaptures; ++c) {
+        const int openIndex = match.capturedStart(c);
+        IndexPair &pair = indexPairs[c];
+        if (openIndex == -1) {
+            // An invalid index indicates an empty capture group
+            pair.openIndex = -1;
+            pair.closeIndex = -1;
+            FAST_DEBUG("capture []");
+        } else {
+            const int closeIndex = match.capturedEnd(c);
+            pair.openIndex = openIndex;
+            pair.closeIndex = closeIndex;
+            FAST_DEBUG("capture [" << pair.openIndex << ".." << pair.closeIndex << "]");
+
+            // each key no more than once
+            if (!indicesToCursors.contains(openIndex)) {
+                TwoViewCursor *twoViewCursor = new TwoViewCursor;
+                twoViewCursor->index = openIndex;
+                indicesToCursors.insert(openIndex, twoViewCursor);
+                FAST_DEBUG("  capture group start index added: " << openIndex);
+            }
+            if (!indicesToCursors.contains(closeIndex)) {
+                TwoViewCursor *twoViewCursor = new TwoViewCursor;
+                twoViewCursor->index = closeIndex;
+                indicesToCursors.insert(closeIndex, twoViewCursor);
+                FAST_DEBUG("  capture group end index added: " << closeIndex);
+            }
+        }
+    }
+
+    // find out where they belong
+    int curRelLine = 0;
+    int curRelCol = 0;
+    int curRelIndex = 0;
+
+    for (TwoViewCursor *twoViewCursor : std::as_const(indicesToCursors)) {
+        // forward to index, save line/col
+        const int index = twoViewCursor->index;
+        FAST_DEBUG("resolving position" << index);
+
+        while (curRelIndex <= index) {
+            FAST_DEBUG("walk pos (" << curRelLine << "," << curRelCol << ") = " << curRelIndex << "relative, steps more to go" << index - curRelIndex);
+
+            const int curRelLineLen = lineLens.at(curRelLine);
+            const int curLineRemainder = curRelLineLen - curRelCol;
+            const int lineFeedIndex = curRelIndex + curLineRemainder;
+            if (index <= lineFeedIndex) {
+                if (index == lineFeedIndex) {
+                    // on this line _at_ line feed
+                    FAST_DEBUG("  on line feed");
+                    const int absLine = curRelLine + rangeStartLine;
+                    twoViewCursor->line = absLine;
+                    twoViewCursor->col = curRelLineLen;
+
+                    // advance to next line
+                    const int advance = (index - curRelIndex) + 1;
+                    ++curRelLine;
+                    curRelCol = 0;
+                    curRelIndex += advance;
+                } else { // index < lineFeedIndex
+                    // on this line _before_ line feed
+                    FAST_DEBUG("  before line feed");
+                    const int diff = (index - curRelIndex);
+                    const int absLine = curRelLine + rangeStartLine;
+                    const int absCol = curRelCol + diff;
+                    twoViewCursor->line = absLine;
+                    twoViewCursor->col = absCol;
+
+                    // advance on same line
+                    const int advance = diff + 1;
+                    curRelCol += advance;
+                    curRelIndex += advance;
+                }
+                FAST_DEBUG("position(" << twoViewCursor->line << "," << twoViewCursor->col << ")");
+            } else { // if (index > lineFeedIndex)
+                // not on this line
+                // advance to next line
+                FAST_DEBUG("  not on this line");
+                ++curRelLine;
+                curRelCol = 0;
+                const int advance = curLineRemainder + 1;
+                curRelIndex += advance;
+            }
+        }
+    }
+
+    // build result array
+    QVector<KTextEditor::Range> result(numCaptures + 1, KTextEditor::Range::invalid());
+    for (int y = 0; y <= numCaptures; y++) {
+        IndexPair &pair = indexPairs[y];
+        if (!(pair.openIndex == -1 || pair.closeIndex == -1)) {
+            const TwoViewCursor *const openCursors = indicesToCursors.value(pair.openIndex);
+            const TwoViewCursor *const closeCursors = indicesToCursors.value(pair.closeIndex);
+            const int startLine = openCursors->line;
+            const int startCol = openCursors->col;
+            const int endLine = closeCursors->line;
+            const int endCol = closeCursors->col;
+            FAST_DEBUG("range " << y << ": (" << startLine << ", " << startCol << ")..(" << endLine << ", " << endCol << ")");
+            result[y] = KTextEditor::Range(startLine, startCol, endLine, endCol);
+        }
+    }
+
+    // free structs allocated for indicesToCursors
+    qDeleteAll(indicesToCursors);
+    return result;
+}
+
 QVector<KTextEditor::Range>
 KateRegExpSearch::search(const QString &pattern, KTextEditor::Range inputRange, bool backwards, QRegularExpression::PatternOptions options)
 {
@@ -234,178 +383,64 @@ KateRegExpSearch::search(const QString &pattern, KTextEditor::Range inputRange, 
             return noResult;
         }
 
-        QVector<int> lineLens(rangeLineCount);
+        QVector<int> lineLens;
         int maxMatchOffset = 0;
-
         // all lines in the input range
         QString wholeRange;
-        for (int i = 0; i < rangeLineCount; ++i) {
-            const int docLineIndex = rangeStartLine + i;
-            if (docLineIndex < 0 || docLineCount <= docLineIndex) { // invalid index
+
+        // Updates wholeRange and appends line from start to start + count to it
+        // We append lines incrementally i.e.,
+        // search 5 lines, => not found a match? => append 5 more and try again
+        auto updateTextLinesToSearch = [&](int start, int count, bool &failed) {
+            failed = false;
+            for (int i = start; i < start + count; ++i) {
+                const int docLineIndex = rangeStartLine + i;
+                if (docLineIndex < 0 || docLineCount <= docLineIndex) { // invalid index
+                    failed = true;
+                    return;
+                }
+                //
+                const QString textLine = m_document->line(docLineIndex);
+                lineLens << textLine.length();
+                wholeRange.append(textLine);
+                //
+                // // This check is needed as some parts in vimode rely on this behaviour.
+                // // We add an '\n' as a delimiter between lines in the range; but never after the
+                // // last line as that would add an '\n' that isn't there in the original text,
+                // // and can skew search results or hit an assert when accessing lineLens later
+                // // in the code.
+                if (i != (rangeLineCount - 1)) {
+                    wholeRange.append(QLatin1Char('\n'));
+                }
+                //
+                // // lineLens.at(i) + 1, because '\n' was added
+                maxMatchOffset += (i == rangeEndLine) ? rangeEndCol : lineLens.at(i) + 1;
+                //
+                FAST_DEBUG("  line" << i << "has length" << lineLens.at(i));
+            }
+            FAST_DEBUG("Max. match offset" << maxMatchOffset);
+        };
+
+        int i = 0;
+        int remaining = rangeLineCount;
+        int searchStartCol = rangeStartCol;
+        while (i < rangeLineCount) {
+            bool failed;
+            const int count = std::min(5, remaining);
+            updateTextLinesToSearch(i, count, failed);
+            if (failed) {
                 return noResult;
             }
-
-            const QString textLine = m_document->line(docLineIndex);
-            lineLens[i] = textLine.length();
-            wholeRange.append(textLine);
-
-            // This check is needed as some parts in vimode rely on this behaviour.
-            // We add an '\n' as a delimiter between lines in the range; but never after the
-            // last line as that would add an '\n' that isn't there in the original text,
-            // and can skew search results or hit an assert when accessing lineLens later
-            // in the code.
-            if (i != (rangeLineCount - 1)) {
-                wholeRange.append(QLatin1Char('\n'));
+            i += count;
+            remaining -= count;
+            const auto result = multilineSearch(repairedRegex, wholeRange, backwards, rangeStartLine, searchStartCol, maxMatchOffset, lineLens);
+            if (!result.isEmpty()) {
+                return result;
             }
-
-            // lineLens.at(i) + 1, because '\n' was added
-            maxMatchOffset += (i == rangeEndLine) ? rangeEndCol : lineLens.at(i) + 1;
-
-            FAST_DEBUG("  line" << i << "has length" << lineLens.at(i));
+            searchStartCol = maxMatchOffset;
         }
 
-        FAST_DEBUG("Max. match offset" << maxMatchOffset);
-
-        QRegularExpressionMatch match;
-        bool found = false;
-        QRegularExpressionMatchIterator iter = repairedRegex.globalMatch(wholeRange, rangeStartCol);
-
-        if (backwards) {
-            while (iter.hasNext()) {
-                QRegularExpressionMatch curMatch = iter.next();
-                if (curMatch.capturedEnd() <= maxMatchOffset) {
-                    match.swap(curMatch);
-                    found = true;
-                }
-            }
-        } else { /* forwards */
-            QRegularExpressionMatch curMatch;
-            if (iter.hasNext()) {
-                curMatch = iter.next();
-            }
-            if (curMatch.capturedEnd() <= maxMatchOffset) {
-                match.swap(curMatch);
-                found = true;
-            }
-        }
-
-        if (!found) {
-            // no match
-            FAST_DEBUG("not found");
-            return noResult;
-        }
-
-        // Capture groups: save opening and closing indices and build a map,
-        // the correct values will be written into it later
-        QMap<int, TwoViewCursor *> indicesToCursors;
-        const int numCaptures = repairedRegex.captureCount();
-        QVector<IndexPair> indexPairs(numCaptures + 1);
-        for (int c = 0; c <= numCaptures; ++c) {
-            const int openIndex = match.capturedStart(c);
-            IndexPair &pair = indexPairs[c];
-            if (openIndex == -1) {
-                // An invalid index indicates an empty capture group
-                pair.openIndex = -1;
-                pair.closeIndex = -1;
-                FAST_DEBUG("capture []");
-            } else {
-                const int closeIndex = match.capturedEnd(c);
-                pair.openIndex = openIndex;
-                pair.closeIndex = closeIndex;
-                FAST_DEBUG("capture [" << pair.openIndex << ".." << pair.closeIndex << "]");
-
-                // each key no more than once
-                if (!indicesToCursors.contains(openIndex)) {
-                    TwoViewCursor *twoViewCursor = new TwoViewCursor;
-                    twoViewCursor->index = openIndex;
-                    indicesToCursors.insert(openIndex, twoViewCursor);
-                    FAST_DEBUG("  capture group start index added: " << openIndex);
-                }
-                if (!indicesToCursors.contains(closeIndex)) {
-                    TwoViewCursor *twoViewCursor = new TwoViewCursor;
-                    twoViewCursor->index = closeIndex;
-                    indicesToCursors.insert(closeIndex, twoViewCursor);
-                    FAST_DEBUG("  capture group end index added: " << closeIndex);
-                }
-            }
-        }
-
-        // find out where they belong
-        int curRelLine = 0;
-        int curRelCol = 0;
-        int curRelIndex = 0;
-
-        for (TwoViewCursor *twoViewCursor : std::as_const(indicesToCursors)) {
-            // forward to index, save line/col
-            const int index = twoViewCursor->index;
-            FAST_DEBUG("resolving position" << index);
-
-            while (curRelIndex <= index) {
-                FAST_DEBUG("walk pos (" << curRelLine << "," << curRelCol << ") = " << curRelIndex << "relative, steps more to go" << index - curRelIndex);
-
-                const int curRelLineLen = lineLens.at(curRelLine);
-                const int curLineRemainder = curRelLineLen - curRelCol;
-                const int lineFeedIndex = curRelIndex + curLineRemainder;
-                if (index <= lineFeedIndex) {
-                    if (index == lineFeedIndex) {
-                        // on this line _at_ line feed
-                        FAST_DEBUG("  on line feed");
-                        const int absLine = curRelLine + rangeStartLine;
-                        twoViewCursor->line = absLine;
-                        twoViewCursor->col = curRelLineLen;
-
-                        // advance to next line
-                        const int advance = (index - curRelIndex) + 1;
-                        ++curRelLine;
-                        curRelCol = 0;
-                        curRelIndex += advance;
-                    } else { // index < lineFeedIndex
-                        // on this line _before_ line feed
-                        FAST_DEBUG("  before line feed");
-                        const int diff = (index - curRelIndex);
-                        const int absLine = curRelLine + rangeStartLine;
-                        const int absCol = curRelCol + diff;
-                        twoViewCursor->line = absLine;
-                        twoViewCursor->col = absCol;
-
-                        // advance on same line
-                        const int advance = diff + 1;
-                        curRelCol += advance;
-                        curRelIndex += advance;
-                    }
-                    FAST_DEBUG("position(" << twoViewCursor->line << "," << twoViewCursor->col << ")");
-                } else { // if (index > lineFeedIndex)
-                    // not on this line
-                    // advance to next line
-                    FAST_DEBUG("  not on this line");
-                    ++curRelLine;
-                    curRelCol = 0;
-                    const int advance = curLineRemainder + 1;
-                    curRelIndex += advance;
-                }
-            }
-        }
-
-        // build result array
-        QVector<KTextEditor::Range> result(numCaptures + 1, KTextEditor::Range::invalid());
-        for (int y = 0; y <= numCaptures; y++) {
-            IndexPair &pair = indexPairs[y];
-            if (!(pair.openIndex == -1 || pair.closeIndex == -1)) {
-                const TwoViewCursor *const openCursors = indicesToCursors.value(pair.openIndex);
-                const TwoViewCursor *const closeCursors = indicesToCursors.value(pair.closeIndex);
-                const int startLine = openCursors->line;
-                const int startCol = openCursors->col;
-                const int endLine = closeCursors->line;
-                const int endCol = closeCursors->col;
-                FAST_DEBUG("range " << y << ": (" << startLine << ", " << startCol << ")..(" << endLine << ", " << endCol << ")");
-                result[y] = KTextEditor::Range(startLine, startCol, endLine, endCol);
-            }
-        }
-
-        // free structs allocated for indicesToCursors
-        qDeleteAll(indicesToCursors);
-
-        return result;
+        return noResult;
     } else {
         // single-line regex search (forwards and backwards)
         const int rangeStartCol = inputRange.start().column();

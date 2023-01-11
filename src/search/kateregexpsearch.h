@@ -109,6 +109,14 @@ private:
      */
     static QString repairPattern(const QString &pattern, bool &stillMultiLine);
 
+    QVector<KTextEditor::Range> multilineSearch(const QRegularExpression &repairedRegex,
+                                                const QString &wholeRange,
+                                                bool backwards,
+                                                int rangeStartLine,
+                                                int rangeStartCol,
+                                                int maxMatchOffset,
+                                                const QVector<int> &lineLens);
+
 private:
     const KTextEditor::Document *const m_document;
     class ReplacementStream;
