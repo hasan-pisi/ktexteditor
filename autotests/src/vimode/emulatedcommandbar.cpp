@@ -1594,7 +1594,7 @@ void EmulatedCommandBarTest::EmulatedCommandBarTests()
         QApplication::processEvents();
         QLineEdit *dummyToFocus = new QLineEdit(QString("Sausage"), mainWindow);
         // Take focus away from kate_view by giving it to dummyToFocus.
-        QApplication::setActiveWindow(mainWindow);
+        mainWindow->activateWindow();
         kate_view->setFocus();
         mainWindowLayout->addWidget(dummyToFocus);
         dummyToFocus->show();

@@ -58,6 +58,11 @@ static void invokeCompletionBox(KTextEditor::ViewPrivate *view)
     verifyCompletionStarted(view);
 }
 
+void CompletionTest::initMain()
+{
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+}
+
 void CompletionTest::init()
 {
     KTextEditor::EditorPrivate::enableUnitTestMode();
@@ -69,7 +74,7 @@ void CompletionTest::init()
     m_doc->setText(QStringLiteral("aa bb cc\ndd"));
 
     KTextEditor::View *v = m_doc->createView(nullptr);
-    QApplication::setActiveWindow(v);
+    v->activateWindow();
     m_view = static_cast<KTextEditor::ViewPrivate *>(v);
     Q_ASSERT(m_view);
 

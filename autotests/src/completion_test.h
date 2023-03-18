@@ -31,6 +31,8 @@ public:
     {
     }
 
+    static void initMain();
+
 private Q_SLOTS:
     void init();
     void cleanup();

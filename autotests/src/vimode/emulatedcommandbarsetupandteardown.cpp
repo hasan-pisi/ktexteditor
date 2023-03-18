@@ -33,7 +33,7 @@ bool WindowKeepActive::eventFilter(QObject *object, QEvent *event)
         // will deactivate the m_mainWindow, preventing it from receiving shortcuts.
         // If we detect this, set it back to being the active window again.
         event->ignore();
-        QApplication::setActiveWindow(m_mainWindow);
+        m_mainWindow->activateWindow();
         return true;
     }
     return false;
@@ -51,7 +51,7 @@ EmulatedCommandBarSetUpAndTearDown::EmulatedCommandBarSetUpAndTearDown(KateViInp
 {
     m_window->show();
     m_view->show();
-    QApplication::setActiveWindow(m_window);
+    m_window->activateWindow();
     m_view->setFocus();
     QApplication::processEvents();
     KateViewConfig::global()->setValue(KateViewConfig::ViInputModeStealKeys, true);
