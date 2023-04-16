@@ -35,16 +35,20 @@ void WordCounter::textInserted(KTextEditor::Document *, KTextEditor::Range range
     auto endLine = m_countByLine.begin() + range.end().line();
     size_t newLines = std::distance(startLine, endLine);
 
-    if (m_countByLine.empty()) { // was empty document before insert
-        newLines++;
-    }
+    if (static_cast<int>(m_countByLine.size() + newLines) != m_document->lines()) // cast to get rid of warning
+        recalculate(m_document);
+    else {
+        if (m_countByLine.empty()) { // was empty document before insert
+            newLines++;
+        }
 
-    if (newLines > 0) {
-        m_countByLine.insert(startLine, newLines, -1);
-    }
+        if (newLines > 0) {
+            m_countByLine.insert(startLine, newLines, -1);
+        }
 
-    m_countByLine[range.end().line()] = -1;
-    m_timer.start();
+        m_countByLine[range.end().line()] = -1;
+        m_timer.start();
+    }
 }
 
 void WordCounter::textRemoved(KTextEditor::Document *, KTextEditor::Range range, const QString &)
@@ -53,15 +57,19 @@ void WordCounter::textRemoved(KTextEditor::Document *, KTextEditor::Range range,
     const auto endLine = m_countByLine.begin() + range.end().line();
     const int removedLines = endLine - startLine;
 
-    if (removedLines > 0) {
-        m_countByLine.erase(startLine, endLine);
-    }
+    if (static_cast<int>(m_countByLine.size() - removedLines) != m_document->lines()) // cast to get rid of warning
+        recalculate(m_document);
+    else {
+        if (removedLines > 0) {
+            m_countByLine.erase(startLine, endLine);
+        }
 
-    if (!m_countByLine.empty()) {
-        m_countByLine[range.start().line()] = -1;
-        m_timer.start();
-    } else {
-        Q_EMIT changed(0, 0, 0, 0);
+        if (!m_countByLine.empty()) {
+            m_countByLine[range.start().line()] = -1;
+            m_timer.start();
+        } else {
+            Q_EMIT changed(0, 0, 0, 0);
+        }
     }
 }
 
