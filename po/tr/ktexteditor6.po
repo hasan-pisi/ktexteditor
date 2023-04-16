@@ -13,6 +13,8 @@
 # Volkan Gezer <volkangezer@gmail.com>, 2013, 2014, 2015, 2017, 2019.
 # Kaan Ozdincer <kaanozdincer@gmail.com>, 2014.
 # Emir SARI <emir_sari@icloud.com>, 2022, 2023.
+# Hasan YILDIZ <hasanyildiz1071@yandex.com> 2023.
+
 msgid ""
 msgstr ""
 "Project-Id-Version: katepart4\n"
@@ -79,7 +81,7 @@ msgstr "Yazdır/Dışa Aktar"
 #: data/katepart5ui.rc:17
 #, kde-format
 msgid "&Edit"
-msgstr "Dü&zen"
+msgstr "&Düzen"
 
 #. i18n: ectx: Menu (edit_find_menu)
 #: data/katepart5ui.rc:34
@@ -121,13 +123,13 @@ msgstr "Kenarlıklar"
 #: data/katepart5ui.rc:88
 #, kde-format
 msgid "&Code Folding"
-msgstr "Kod &Gizleme"
+msgstr "&Kod Gizleme"
 
 #. i18n: ectx: Menu (go)
 #: data/katepart5ui.rc:105
 #, kde-format
 msgid "&Go"
-msgstr "G&it"
+msgstr "&Git"
 
 #. i18n: ectx: Menu (tools)
 #: data/katepart5ui.rc:120
@@ -152,7 +154,7 @@ msgstr "Yazım Denetimi"
 #: data/katepart5ui.rc:150
 #, kde-format
 msgid "&Settings"
-msgstr "Ayar&lar"
+msgstr "&Ayarlar"
 
 #. i18n: ectx: ToolBar (mainToolBar)
 #: data/katepart5ui.rc:174
@@ -437,7 +439,7 @@ msgstr "&Otomatik tamamlamayı etkinleştir"
 #: dialogs/completionconfigtab.ui:42
 #, kde-format
 msgid "Auto select &first completion entry"
-msgstr "İ&lk tamamlama girdisini otomatik seç"
+msgstr "&İlk tamamlama girdisini otomatik seç"
 
 #. i18n: ectx: property (text), widget (QCheckBox, chkTabCompletion)
 #: dialogs/completionconfigtab.ui:49
@@ -757,8 +759,8 @@ msgstr "G&irintileme kipi:"
 #. i18n: ectx: property (text), widget (QLabel, lblExtensions)
 #: dialogs/filetypeconfigwidget.ui:149
 #, kde-format
-msgid "File e&xtensions:"
-msgstr "Dosya u&zantıları:"
+msgid "&File extensions:"
+msgstr "&Dosya uzantıları:"
 
 #. i18n: ectx: property (whatsThis), widget (QLineEdit, edtFileExtensions)
 #: dialogs/filetypeconfigwidget.ui:159
@@ -801,8 +803,8 @@ msgstr ""
 #. i18n: ectx: property (text), widget (QLabel, lblPriority)
 #: dialogs/filetypeconfigwidget.ui:197
 #, kde-format
-msgid "P&riority:"
-msgstr "Ö&ncelik:"
+msgid "&Priority:"
+msgstr "&Öncelik:"
 
 #. i18n: ectx: property (whatsThis), widget (QSpinBox, sbPriority)
 #: dialogs/filetypeconfigwidget.ui:207
